@@ -1,0 +1,62 @@
+<!-- pages/connect/connect.wxml -->
+
+<view class="page">
+
+  <!-- header -->
+  <view class="header">
+    <image class="lamp-icon-img {{scanning ? 'pulse' : ''}}" src="/icon.png" mode="aspectFit"></image>
+    <text class="title">SmartLamp</text>
+    <text class="subtitle">BLE Direct Connect</text>
+  </view>
+
+  <!-- scan button -->
+  <button
+    class="scan-btn {{scanning ? 'scanning' : ''}}"
+    bindtap="onScanTap"
+    disabled="{{scanning}}"
+    hover-class="scan-btn-press"
+  >
+    <text class="scan-btn-text">{{scanning ? 'Scanning...' : 'Search Devices'}}</text>
+    <view class="scan-ring" wx:if="{{scanning}}"></view>
+  </button>
+
+  <!-- device list -->
+  <view class="list" wx:if="{{devices.length > 0}}">
+    <text class="list-title">Found Devices</text>
+    <view
+      class="device-card {{item.connecting ? 'connecting' : ''}}"
+      wx:for="{{devices}}"
+      wx:key="deviceId"
+      bindtap="onDeviceTap"
+      data-id="{{item.deviceId}}"
+      hover-class="device-card-press"
+    >
+      <view class="dev-left">
+        <view class="dev-icon">📶</view>
+        <view class="dev-info">
+          <text class="dev-name">{{item.name}}</text>
+          <text class="dev-id">{{item.deviceId}}</text>
+        </view>
+      </view>
+      <view class="dev-right">
+        <view class="signal">
+          <view class="signal-bar {{item.RSSI > -60 ? 'on' : ''}}"></view>
+          <view class="signal-bar {{item.RSSI > -70 ? 'on' : ''}}" style="height: 10rpx;"></view>
+          <view class="signal-bar {{item.RSSI > -80 ? 'on' : ''}}" style="height: 16rpx;"></view>
+        </view>
+        <text class="dev-arrow">➜</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- empty -->
+  <view class="empty" wx:if="{{!scanning && devices.length === 0 && !error}}">
+    <text class="empty-icon">🔍</text>
+    <text class="empty-title">No Devices</text>
+    <text class="empty-desc">Make sure SmartLamp is powered on and within 5m</text>
+  </view>
+
+  <!-- error -->
+  <view class="error-toast" wx:if="{{error}}">{{error}}</view>
+
+</view>

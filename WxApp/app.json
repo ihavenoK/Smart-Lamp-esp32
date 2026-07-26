@@ -1,0 +1,13 @@
+{
+  "pages": [
+    "pages/connect/connect",
+    "pages/index/index"
+  ],
+  "window": {
+    "navigationBarBackgroundColor": "#0f0f1a",
+    "navigationBarTitleText": "SmartLamp",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#0f0f1a"
+  },
+  "sitemapLocation": "sitemap.json"
+}

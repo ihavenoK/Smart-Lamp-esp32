@@ -1,0 +1,134 @@
+<!-- pages/index/index.wxml -->
+
+<view class="page">
+
+  <!-- connected bar -->
+  <view class="topbar" wx:if="{{connected}}">
+    <view class="conn-dot"></view>
+    <text class="conn-label">Connected</text>
+    <view class="sensor-row">
+      <text class="sensor-val">🌡 {{state.temp}}℃</text>
+      <text class="sensor-val">💧 {{state.humi}}%</text>
+    </view>
+  </view>
+
+  <!-- disconnected -->
+  <view class="disconnected" wx:if="{{!connected}}">
+    <view class="discon-card">
+      <text class="discon-icon">🔌</text>
+      <text class="discon-title">SmartLamp Disconnected</text>
+      <text class="discon-desc">Power on the lamp and connect via Bluetooth</text>
+      <button class="reconnect-btn" bindtap="onReconnect" hover-class="reconnect-btn-press">Reconnect</button>
+    </view>
+  </view>
+
+  <!-- ===== Mode ===== -->
+  <view class="section">
+    <text class="section-title">Mode</text>
+    <view class="mode-row">
+      <view
+        class="mode-item item-4 {{state.mode === idx ? 'active' : ''}}"
+        wx:for="{{[0,1,2,3]}}"
+        wx:key="idx"
+        wx:for-item="idx"
+        data-mode="{{idx}}"
+        bindtap="onModeTap"
+        hover-class="mode-item-press"
+      >
+        <text class="mode-emoji">{{modeEmojis[idx]}}</text>
+        <text class="mode-label">{{modeNames[idx]}}</text>
+      </view>
+    </view>
+    <view class="mode-row mode-row-center">
+      <view
+        class="mode-item item-3 {{state.mode === idx ? 'active' : ''}}"
+        wx:for="{{[4,5,6]}}"
+        wx:key="idx"
+        wx:for-item="idx"
+        data-mode="{{idx}}"
+        bindtap="onModeTap"
+        hover-class="mode-item-press"
+      >
+        <text class="mode-emoji">{{modeEmojis[idx]}}</text>
+        <text class="mode-label">{{modeNames[idx]}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- ===== Brightness Slider ===== -->
+  <view class="section" wx:if="{{state.mode !== 3 && state.mode !== 4 && state.mode !== 5 && state.mode !== 6}}">
+    <view class="section-head">
+      <text class="section-title">Brightness</text>
+      <text class="section-val">{{state.light}} / 4</text>
+    </view>
+    <view class="slider-wrap">
+      <slider
+        min="0" max="4" step="1"
+        value="{{state.light}}"
+        activeColor="#6c63ff"
+        backgroundColor="#333350"
+        block-size="20"
+        block-color="#ffffff"
+        bindchange="onBrightnessChange"
+      />
+      <view class="slider-labels">
+        <text class="slider-label">Off</text>
+        <text class="slider-label">Low</text>
+        <text class="slider-label">Mid</text>
+        <text class="slider-label">High</text>
+        <text class="slider-label">Max</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- ===== Color ===== -->
+  <view class="section" wx:if="{{state.mode === 6}}">
+    <text class="section-title">Color</text>
+    <view class="color-row">
+      <view
+        class="color-dot color-0 {{state.color === 0 ? 'active' : ''}}"
+        data-color="0" bindtap="onColorTap" hover-class="color-press"
+      ><text class="color-inner">W</text></view>
+      <view
+        class="color-dot color-1 {{state.color === 1 ? 'active' : ''}}"
+        data-color="1" bindtap="onColorTap" hover-class="color-press"
+      ></view>
+      <view
+        class="color-dot color-2 {{state.color === 2 ? 'active' : ''}}"
+        data-color="2" bindtap="onColorTap" hover-class="color-press"
+      ></view>
+      <view
+        class="color-dot color-3 {{state.color === 3 ? 'active' : ''}}"
+        data-color="3" bindtap="onColorTap" hover-class="color-press"
+      ></view>
+      <view
+        class="color-dot color-4 {{state.color === 4 ? 'active' : ''}}"
+        data-color="4" bindtap="onColorTap" hover-class="color-press"
+      ></view>
+      <view
+        class="color-dot color-5 {{state.color === 5 ? 'active' : ''}}"
+        data-color="5" bindtap="onColorTap" hover-class="color-press"
+      ></view>
+      <view
+        class="color-dot color-6 {{state.color === 6 ? 'active' : ''}}"
+        data-color="6" bindtap="onColorTap" hover-class="color-press"
+      ></view>
+    </view>
+  </view>
+
+  <!-- ===== Study ===== -->
+  <view class="section" wx:if="{{state.mode === 5}}">
+    <view class="study-card">
+      <text class="study-icon">📖</text>
+      <text class="study-time">{{state.study_time}}</text>
+      <text class="study-unit">minutes</text>
+      <text class="study-tip">Auto on/off by IR sensor</text>
+    </view>
+  </view>
+
+  <!-- disconnect -->
+  <view class="footer-btn">
+    <button class="discon-btn" bindtap="onDisconnect" hover-class="discon-btn-press">Disconnect</button>
+  </view>
+
+</view>
