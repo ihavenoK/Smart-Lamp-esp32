@@ -180,6 +180,7 @@ static int gap_event(struct ble_gap_event *event, void *arg)
     case BLE_GAP_EVENT_CONNECT:
         if (event->connect.status == 0) {
             s_conn_handle = event->connect.conn_handle;
+            xEventGroupSetBits(g_system_events, EVT_BLE_CONNECTED);
             ESP_LOGI(TAG, "connected, handle=%u", s_conn_handle);
         } else {
             ESP_LOGW(TAG, "connect failed, status=%d", event->connect.status);
@@ -190,6 +191,7 @@ static int gap_event(struct ble_gap_event *event, void *arg)
     case BLE_GAP_EVENT_DISCONNECT:
         ESP_LOGI(TAG, "disconnected, reason=%d", event->disconnect.reason);
         s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+        xEventGroupClearBits(g_system_events, EVT_BLE_CONNECTED);
         start_advertising();
         return 0;
 

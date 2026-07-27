@@ -31,6 +31,7 @@
 #include "esp_log.h"
 #include <time.h>
 #include <stdlib.h>           /* setenv / tzset */
+#include <string.h>           /* strlen / snprintf */
 
 /* 全局状态, 定义在 lamp_core.c */
 extern uint8_t  g_mode;
@@ -47,7 +48,7 @@ static const char *TAG = "display";
 #define I2C_MASTER_PORT       I2C_NUM_0
 #define I2C_MASTER_SDA_IO     21U
 #define I2C_MASTER_SCL_IO     22U
-#define I2C_MASTER_FREQ_HZ    400000U     /* 400kHz 快速模式 */
+#define I2C_MASTER_FREQ_HZ    1000000U    /* 1MHz 快速模式+ */
 
 /* SSD1306 I2C 地址 (7位) */
 #define SSD1306_ADDR          0x3CU
@@ -63,6 +64,12 @@ static const char *TAG = "display";
 
 /* 写命令的超时时间 (毫秒) */
 #define I2C_TIMEOUT_MS        100
+
+/* ====== 模式名查表 ====== */
+static const char *s_mode_names[] = {
+    "Normal", "Cold", "Warm", "Color", "Night", "Study", "Auto"
+};
+#define MODE_NAME_COUNT (sizeof(s_mode_names) / sizeof(s_mode_names[0]))
 
 /* ====== I2C 句柄 ====== */
 static i2c_master_bus_handle_t g_bus_handle = NULL;
@@ -227,6 +234,27 @@ static void display_clear_line(uint8_t line)
     ssd1306_write_data_bulk(zeros, SSD1306_WIDTH);
 }
 
+/**
+ * @brief 清空指定行的一段列区间 (上下两页)
+ *
+ * @param line       逻辑行号 1~4
+ * @param start_col  起始列 1~16
+ * @param end_col    结束列 1~16 (含)
+ */
+static void display_clear_cols(uint8_t line, uint8_t start_col, uint8_t end_col)
+{
+    if (start_col < 1U || end_col > 16U || start_col > end_col) return;
+    static const uint8_t zeros[SSD1306_WIDTH] = { 0U };
+    uint8_t start_page  = (line - 1U) * 2U;
+    uint8_t pixel_start = (start_col - 1U) * 8U;
+    uint8_t pixel_count = (end_col - start_col + 1U) * 8U;
+
+    ssd1306_set_cursor(start_page, pixel_start);
+    ssd1306_write_data_bulk(zeros, pixel_count);
+    ssd1306_set_cursor((uint8_t)(start_page + 1U), pixel_start);
+    ssd1306_write_data_bulk(zeros, pixel_count);
+}
+
 static void display_clear(void)
 {
     static const uint8_t zeros[SSD1306_WIDTH] = { 0U };
@@ -336,6 +364,18 @@ static void display_show_num(uint8_t line, uint8_t col, uint32_t number,
     }
 }
 
+/**
+ * @brief 在 16 字符行上居中显示字符串
+ */
+static void display_show_centered(uint8_t line, const char *str)
+{
+    if (str == NULL) return;
+    size_t len = strlen(str);
+    if (len > 16U) len = 16U;
+    uint8_t col = (uint8_t)((16U - len) / 2U + 1U);
+    display_show_string(line, col, str);
+}
+
 void display_update(const oled_data_t *data)
 {
     /* 已改为直接读全局变量 + 系统时间, 保留此接口供后续使用 */
@@ -414,132 +454,246 @@ static void oled_task(void *arg)
 
     ESP_LOGI(TAG, "OLED task started.");
 
-    /* 缓存: 初始化为不可能值, 确保首次进入必刷新 */
+    /* 缓存: 初始化为不可能值, 确保首帧全刷 */
     static uint8_t  last_hour       = 0xFFU;
     static uint8_t  last_min        = 0xFFU;
-    static uint32_t last_alarm_rest = 0xFFFFFFFFUL;
-    static uint8_t  last_flag_count = 0xFFU;
     static uint8_t  last_humi       = 0xFFU;
     static uint8_t  last_temp       = 0xFFU;
+    static uint8_t  last_status     = 0xFFU;  /* '-','W','B','&' */
     static uint8_t  last_mode       = 0xFFU;
     static uint8_t  last_level      = 0xFFU;
     static uint8_t  last_color      = 0xFFU;
-    static uint16_t last_study_time = 0xFFFFU;
+    static uint16_t last_study      = 0xFFFFU;
+    static uint32_t last_alarm_rest = 0xFFFFFFFFUL;
+    static uint8_t  last_flag       = 0xFFU;
 
-    /* 闹钟模式入口标记: 切页时全屏清除一次, 之后只清变化行 */
-    static uint8_t  alarm_need_full_clear = 1U;
+    static uint8_t alarm_need_full_clear = 1U;
 
     while (1) {
-        /* -------------------------------------------
-         * 优先级 1: 闹钟设置模式 — 全屏专用 UI + 闪烁
-         *   500ms 刷新周期 (闪烁效果), 退出设置模式后脏缓存迫使下一帧全刷
-         * ------------------------------------------- */
+        /* ====== 闹钟设置模式 ====== */
         if (g_alarm_state != ALARM_SET_IDLE) {
             if (alarm_need_full_clear) {
-                /* 切页进闹钟模式: 全屏清除一次, 覆盖正常模式残留 */
                 display_clear();
                 alarm_need_full_clear = 0U;
             }
             display_alarm_setting();
-
-            /* 标记缓存脏: 下次退出闹钟设置后, 正常界面必须全刷 */
-            last_hour       = 0xFFU;
-            last_min        = 0xFFU;
+            /* 退出后强制全刷 */
+            last_hour = last_min = last_humi = last_temp = 0xFFU;
+            last_status = 0xFFU;
+            last_mode = last_level = last_color = 0xFFU;
+            last_study = 0xFFFFU;
             last_alarm_rest = 0xFFFFFFFFUL;
-            last_flag_count = 0xFFU;
-            last_humi       = 0xFFU;
-            last_temp       = 0xFFU;
-            last_mode       = 0xFFU;
-            last_level      = 0xFFU;
-            last_color      = 0xFFU;
-            last_study_time = 0xFFFFU;
-
+            last_flag = 0xFFU;
             vTaskDelay(pdMS_TO_TICKS(500));
             continue;
         }
-
-        /* 退出闹钟模式: 标记下次进入闹钟设置时需全清 */
         alarm_need_full_clear = 1U;
 
-        /* 读取当前值 */
+        /* ====== 读取当前值 ====== */
         time_t now;
         struct tm timeinfo;
         time(&now);
         localtime_r(&now, &timeinfo);
         uint8_t hour = (uint8_t)timeinfo.tm_hour;
         uint8_t min  = (uint8_t)timeinfo.tm_min;
-
-        /* 闹钟剩余秒数: 从 FreeRTOS 定时器动态读取 (修复 g_alarm_time 不递减的 Bug) */
+        uint8_t humi = g_humi;
+        uint8_t temp = g_temp;
+        uint8_t mode = g_mode;
+        uint8_t level = g_light_level;
+        uint8_t color = g_color_index;
+        uint16_t study = g_study_time;
         uint32_t alarm_rest = alarm_get_remaining();
+        uint8_t flag = g_flag_count;
 
-        /* ====== 脏检测: 逐字段比较缓存 ====== */
-        uint8_t dirty = 0U;
+        EventBits_t bits = xEventGroupGetBits(g_system_events);
+        uint8_t wifi_ok = (bits & EVT_WIFI_CONNECTED) ? 1U : 0U;
+        uint8_t ble_ok  = (bits & EVT_BLE_CONNECTED)  ? 1U : 0U;
+        char status_ch = (wifi_ok && ble_ok) ? '&' : (wifi_ok ? 'W' : (ble_ok ? 'B' : '-'));
 
-        if (hour != last_hour || min != last_min)                dirty = 1U;
-        if (alarm_rest != last_alarm_rest)                       dirty = 1U;
-        if (g_flag_count != last_flag_count)                     dirty = 1U;
-        if (g_humi != last_humi)                                 dirty = 1U;
-        if (g_temp != last_temp)                                 dirty = 1U;
-        if (g_mode != last_mode)                                 dirty = 1U;
-        if (g_light_level != last_level)                         dirty = 1U;
-        if (g_color_index != last_color)                         dirty = 1U;
-        if (g_study_time != last_study_time)                     dirty = 1U;
-
-        if (dirty == 0U) {
-            /* 无变化: 跳过本次刷新, 省 I2C 传输和 CPU */
-            vTaskDelay(pdMS_TO_TICKS(1000));
-            continue;
+        /* ====== 首帧: 全清全刷 ====== */
+        if (last_hour == 0xFFU) {
+            display_clear();
+            goto DRAW_ALL;
         }
 
-        /* 更新缓存 (必须在清屏前, 避免重入时不一致) */
-        last_hour       = hour;
-        last_min        = min;
-        last_alarm_rest = alarm_rest;
-        last_flag_count = g_flag_count;
-        last_humi       = g_humi;
-        last_temp       = g_temp;
-        last_mode       = g_mode;
-        last_level      = g_light_level;
-        last_color      = g_color_index;
-        last_study_time = g_study_time;
+        /* ====== 差分刷新 ====== */
 
-        /* ====== 数据有变化: 全屏重绘 ====== */
-        display_clear();
+        /* Line 1: 时间 (col 1-5) */
+        if (hour != last_hour || min != last_min) {
+            display_clear_cols(1U, 1U, 5U);
+            display_show_num(1U, 1U, hour, 2U);
+            display_show_char(1U, 3U, ':');
+            display_show_num(1U, 4U, min, 2U);
+            last_hour = hour;
+            last_min  = min;
+        }
 
-        /* Line 1: 时钟 (列1-6) + 闹钟倒计时 (列8-15) */
-        display_show_string(1U, 1U, "T");
-        display_show_num(1U, 2U, (uint32_t)hour, 2U);
-        display_show_char(1U, 4U, ':');
-        display_show_num(1U, 5U, (uint32_t)min, 2U);
+        /* Line 1: 湿度 (col 8-10) — 与首帧全刷布局一致 */
+        if (humi != last_humi) {
+            display_clear_cols(1U, 8U, 10U);
+            display_show_num(1U, 8U, humi, 2U);
+            display_show_string(1U, 10U, "%");
+            last_humi = humi;
+        }
 
-        if (g_flag_count != 0U) {
-            display_show_string(1U, 8U, "A");
-            display_show_num(1U, 9U,  alarm_rest / 3600U, 2U);
-            display_show_char(1U, 11U, ':');
-            display_show_num(1U, 12U, (alarm_rest % 3600U) / 60U, 2U);
-            display_show_char(1U, 14U, ':');
-            display_show_num(1U, 15U,  alarm_rest % 60U, 2U);
+        /* Line 1: 温度 (col 12-14) — 与首帧全刷布局一致 */
+        if (temp != last_temp) {
+            display_clear_cols(1U, 12U, 14U);
+            display_show_num(1U, 12U, temp, 2U);
+            display_show_string(1U, 14U, "C");
+            last_temp = temp;
+        }
+
+        /* Line 1: 连接状态 (col 16) */
+        if ((uint8_t)status_ch != last_status) {
+            display_clear_cols(1U, 16U, 16U);
+            display_show_char(1U, 16U, status_ch);
+            last_status = (uint8_t)status_ch;
+        }
+
+        /* Line 2: 模式名 (整行) */
+        if (mode != last_mode) {
+            display_clear_line(2U);
+            if (mode < MODE_NAME_COUNT) {
+                display_show_centered(2U, s_mode_names[mode]);
+            }
+        }
+
+        /* Line 3: 模式参数 (整行, 依赖 mode/level/color/study) */
+        {
+            uint8_t line3_dirty = 0U;
+            if (mode != last_mode)                                          line3_dirty = 1U;
+            if (level != last_level && (mode == LAMP_MODE_NORMAL
+                || mode == LAMP_MODE_COLD || mode == LAMP_MODE_WARM
+                || mode == LAMP_MODE_STUDY))                                line3_dirty = 1U;
+            if (color != last_color && (mode == LAMP_MODE_COLOR
+                || mode == LAMP_MODE_AUTO))                                 line3_dirty = 1U;
+            if (study != last_study && mode == LAMP_MODE_STUDY)             line3_dirty = 1U;
+
+            if (line3_dirty) {
+                display_clear_line(3U);
+                switch (mode) {
+                case LAMP_MODE_NORMAL:
+                case LAMP_MODE_COLD:
+                case LAMP_MODE_WARM:
+                    display_show_centered(3U, "Level: ");
+                    display_show_num(3U, 12U, level, 1U);
+                    break;
+                case LAMP_MODE_COLOR:
+                    display_show_centered(3U, "Color: ");
+                    display_show_num(3U, 12U, color, 2U);
+                    break;
+                case LAMP_MODE_NIGHT:
+                    display_show_centered(3U, "--");
+                    break;
+                case LAMP_MODE_STUDY: {
+                    char buf[11];
+                    uint8_t sh = (uint8_t)(study / 60U);
+                    uint8_t sm = (uint8_t)(study % 60U);
+                    snprintf(buf, sizeof(buf), "Stu:%02u:%02u", sh, sm);
+                    display_show_centered(3U, buf);
+                    break;
+                }
+                case LAMP_MODE_AUTO:
+                    display_show_centered(3U, "Color: ");
+                    display_show_num(3U, 12U, color, 1U);
+                    break;
+                default: break;
+                }
+            }
+        }
+
+        /* Line 4: 闹钟 (整行) */
+        if (alarm_rest != last_alarm_rest || flag != last_flag) {
+            display_clear_line(4U);
+            if (flag != 0U) {
+                char abuf[20];
+                snprintf(abuf, sizeof(abuf), "A %02u:%02u:%02u",
+                         (unsigned)(alarm_rest / 3600U),
+                         (unsigned)((alarm_rest % 3600U) / 60U),
+                         (unsigned)(alarm_rest % 60U));
+                display_show_centered(4U, abuf);
+            } else {
+                display_show_centered(4U, "A --:--:--");
+            }
+            last_alarm_rest = alarm_rest;
+            last_flag = flag;
+        }
+
+        /* 更新非行级缓存 */
+        last_mode  = mode;
+        last_level = level;
+        last_color = color;
+        last_study = study;
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        continue;
+
+DRAW_ALL:
+        /* 首帧全刷: Line 1 */
+        display_show_num(1U, 1U, hour, 2U);
+        display_show_char(1U, 3U, ':');
+        display_show_num(1U, 4U, min, 2U);
+        display_show_num(1U, 8U, humi, 2U);
+        display_show_string(1U, 10U, "%");
+        display_show_num(1U, 12U, temp, 2U);
+        display_show_string(1U, 14U, "C");
+        display_show_char(1U, 16U, status_ch);
+
+        /* Line 2 */
+        if (mode < MODE_NAME_COUNT) {
+            display_show_centered(2U, s_mode_names[mode]);
+        }
+
+        /* Line 3 */
+        switch (mode) {
+        case LAMP_MODE_NORMAL:
+        case LAMP_MODE_COLD:
+        case LAMP_MODE_WARM:
+            display_show_centered(3U, "Level: ");
+            display_show_num(3U, 12U, level, 1U);
+            break;
+        case LAMP_MODE_COLOR:
+            display_show_centered(3U, "Color: ");
+            display_show_num(3U, 12U, color, 2U);
+            break;
+        case LAMP_MODE_NIGHT:
+            display_show_centered(3U, "--");
+            break;
+        case LAMP_MODE_STUDY: {
+            char buf[11];
+            uint8_t sh = (uint8_t)(study / 60U);
+            uint8_t sm = (uint8_t)(study % 60U);
+            snprintf(buf, sizeof(buf), "Stu:%02u:%02u", sh, sm);
+            display_show_centered(3U, buf);
+            break;
+        }
+        case LAMP_MODE_AUTO:
+            display_show_centered(3U, "Color: ");
+            display_show_num(3U, 12U, color, 1U);
+            break;
+        default: break;
+        }
+
+        /* Line 4 */
+        if (flag != 0U) {
+            char abuf[20];
+            snprintf(abuf, sizeof(abuf), "A %02u:%02u:%02u",
+                     (unsigned)(alarm_rest / 3600U),
+                     (unsigned)((alarm_rest % 3600U) / 60U),
+                     (unsigned)(alarm_rest % 60U));
+            display_show_centered(4U, abuf);
         } else {
-            display_show_string(1U, 8U, "A--:--:--");
+            display_show_centered(4U, "A --:--:--");
         }
 
-        /* Line 2: 湿度 + 温度 */
-        display_show_string(2U, 1U, "Humi:");
-        display_show_num(2U, 6U, (uint32_t)g_humi, 2U);
-        display_show_string(2U, 9U, "Temp:");
-        display_show_num(2U, 14U, (uint32_t)g_temp, 2U);
-
-        /* Line 3: 模式 + 亮度 */
-        display_show_string(3U, 1U, "Mode:");
-        display_show_num(3U, 6U, (uint32_t)g_mode, 1U);
-        display_show_string(3U, 9U, "Level:");
-        display_show_num(3U, 15U, (uint32_t)g_light_level, 1U);
-
-        /* Line 4: 颜色 + 学习时长 */
-        display_show_string(4U, 1U, "Color:");
-        display_show_num(4U, 7U, (uint32_t)g_color_index, 1U);
-        display_show_string(4U, 9U, "Stu:");
-        display_show_num(4U, 13U, g_study_time, 4U);
+        /* 保存首帧缓存 */
+        last_hour = hour; last_min = min;
+        last_humi = humi; last_temp = temp;
+        last_status = (uint8_t)status_ch;
+        last_mode = mode; last_level = level; last_color = color;
+        last_study = study;
+        last_alarm_rest = alarm_rest; last_flag = flag;
 
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
