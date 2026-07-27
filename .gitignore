@@ -81,3 +81,6 @@ Desktop.ini
 .codebuddy/
 .vscode/
 .workbuddy/
+
+# OTA release build output directories (firmware .bin are force-added per release)
+OTA/*/
