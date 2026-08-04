@@ -1,0 +1,6 @@
+把sdkconfig里的url换成你的地址
+重新编译烧录
+
+终端执行：
+cd "D:/32/esp32/Smart-Lamp/OTA/1.0.1"
+python -m http.server 8070

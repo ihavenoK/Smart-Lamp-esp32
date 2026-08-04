@@ -78,22 +78,39 @@ static int chr_access(uint16_t conn_handle, uint16_t attr_handle,
         return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
     }
 
-    uint8_t buf[3];
+    /* 支持两种帧格式:
+     *   [mode][light][color]            → 旧协议 3 字节, cmd_type=SET
+     *   [cmd_type][mode][light][color]  → 新协议 4 字节 (支持闹钟等命令)
+     */
+    uint8_t buf[4] = {0};
     uint16_t copied = 0;
     int rc = ble_hs_mbuf_to_flat(ctxt->om, buf, total, &copied);
     if (rc != 0 || copied < 3) {
         return BLE_ATT_ERR_UNLIKELY;
     }
 
-    ESP_LOGI(TAG, "RX cmd: mode=%u light=%u color=%u", buf[0], buf[1], buf[2]);
-
     lamp_cmd_t cmd = {
-        .source   = CMD_SRC_BLE,
-        .mode     = buf[0],
-        .light    = buf[1],
-        .color    = buf[2],
-        .cmd_type = CMD_TYPE_SET,
+        .source = CMD_SRC_BLE,
     };
+
+    if (copied >= 4) {
+        /* 新协议: [cmd_type][mode][light][color] */
+        cmd.cmd_type = buf[0];
+        cmd.mode     = buf[1];
+        cmd.light    = buf[2];
+        cmd.color    = buf[3];
+        ESP_LOGI(TAG, "RX cmd: type=%u mode=%u light=%u color=%u",
+                 cmd.cmd_type, cmd.mode, cmd.light, cmd.color);
+    } else {
+        /* 旧协议: [mode][light][color] */
+        cmd.cmd_type = CMD_TYPE_SET;
+        cmd.mode     = buf[0];
+        cmd.light    = buf[1];
+        cmd.color    = buf[2];
+        ESP_LOGI(TAG, "RX cmd (legacy): mode=%u light=%u color=%u",
+                 cmd.mode, cmd.light, cmd.color);
+    }
+
     xQueueSend(g_cmd_queue, &cmd, 0);
     return 0;
 }

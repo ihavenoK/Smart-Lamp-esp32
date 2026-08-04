@@ -126,6 +126,43 @@
     </view>
   </view>
 
+  <!-- ===== Alarm ===== -->
+  <view class="section" wx:if="{{connected}}">
+    <view class="section-head">
+      <text class="section-title">Alarm</text>
+      <text class="section-val">{{alarmLabel}}</text>
+    </view>
+    <view class="alarm-row">
+      <button class="alarm-set-btn" bindtap="onAlarmOpen" hover-class="btn-press">⏰ Set Alarm</button>
+      <button class="alarm-clear-btn" bindtap="onAlarmClear" hover-class="btn-press">Cancel Alarm</button>
+    </view>
+  </view>
+
+  <!-- ===== Alarm Modal ===== -->
+  <view class="modal-mask" wx:if="{{alarmModalOpen}}" bindtap="onAlarmModalClose">
+    <view class="modal" catchtap="noop">
+      <text class="modal-title">⏰ Set Alarm</text>
+      <view class="modal-pickers">
+        <picker mode="selector" range="{{hourRange}}" value="{{alarmHour}}" bindchange="onHourChange">
+          <view class="picker-box"><text class="picker-label">Hour</text><text class="picker-val">{{alarmHour}}</text></view>
+        </picker>
+        <text class="picker-colon">:</text>
+        <picker mode="selector" range="{{minRange}}" value="{{alarmMin}}" bindchange="onMinChange">
+          <view class="picker-box"><text class="picker-label">Min</text><text class="picker-val">{{alarmMin}}</text></view>
+        </picker>
+        <text class="picker-colon">:</text>
+        <picker mode="selector" range="{{secRange}}" value="{{alarmSec}}" bindchange="onSecChange">
+          <view class="picker-box"><text class="picker-label">Sec</text><text class="picker-val">{{alarmSec}}</text></view>
+        </picker>
+      </view>
+      <view class="modal-tip">Countdown timer, lamp will beep when done</view>
+      <view class="modal-btns">
+        <button class="modal-btn modal-cancel" bindtap="onAlarmModalClose" hover-class="btn-press">Cancel</button>
+        <button class="modal-btn modal-ok" bindtap="onAlarmConfirm" hover-class="btn-press">Confirm</button>
+      </view>
+    </view>
+  </view>
+
   <!-- disconnect -->
   <view class="footer-btn">
     <button class="discon-btn" bindtap="onDisconnect" hover-class="discon-btn-press">Disconnect</button>

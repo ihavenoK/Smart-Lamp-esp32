@@ -22,6 +22,7 @@
 #define CMD_TYPE_ALARM_ENTER  0x03U   /* 长按MODE进入闹钟设置 */
 #define CMD_TYPE_ALARM_INC    0x04U   /* 闹钟设置中MODE递增 */
 #define CMD_TYPE_ALARM_STEP   0x05U   /* 闹钟设置中ADJUST下一步 */
+#define CMD_TYPE_ALARM_SET    0x06U   /* BLE直设闹钟: mode=时, light=分, color=秒 (0:0:0=取消) */
 
 /* ====== 闹钟设置状态 (多组件共用, 定义在lamp_core.c) ====== */
 typedef enum {

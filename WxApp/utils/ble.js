@@ -21,6 +21,7 @@ var COLOR_NAMES = ['白','青','黄','紫','蓝','红','绿'];
 var s_deviceId = '';
 var s_connected = false;
 var s_notifyReady = false;
+var s_lastDeviceId = '';   /* 记住上次连接的设备，用于快速重连 */
 
 /* ——— callbacks ——— */
 
@@ -33,6 +34,7 @@ function onConnect(fn) { s_onConnect = fn; }
 function onDisconnect(fn) { s_onDisconnect = fn; }
 
 function isConnected() { return s_connected; }
+function getLastDeviceId() { return s_lastDeviceId; }
 
 /* ===== init ===== */
 
@@ -49,10 +51,18 @@ function init() {
 
         wx.onBLEConnectionStateChange(function (res) {
           if (!res.connected && s_deviceId) {
+            var closed = s_deviceId;
             s_connected = false;
             s_notifyReady = false;
             s_deviceId = '';
-            if (s_onDisconnect) s_onDisconnect();
+            /* 关键: 显式关闭底层连接, 释放系统 BLE 资源,
+             * 否则 iOS/Android 认为连接仍占用, 重新扫描搜不到 */
+            wx.closeBLEConnection({
+              deviceId: closed,
+              complete: function () {
+                if (s_onDisconnect) s_onDisconnect();
+              }
+            });
           }
         });
 
@@ -87,38 +97,46 @@ function init() {
 
 function startScan() {
   return new Promise(function (resolve, reject) {
-    wx.startBluetoothDevicesDiscovery({
-      allowDuplicatesKey: false,
-      interval: 0,
-      success: function () {
-        var devices = {};
-        wx.onBluetoothDeviceFound(function (res) {
-          for (var i = 0; i < res.devices.length; i++) {
-            var d = res.devices[i];
-            var name = d.name || d.localName || '';
-            if (name === DEVICE_NAME || d.advertisServiceUUIDs) {
-              devices[d.deviceId] = d;
-            }
+    /* 先停止旧扫描, 避免与上次扫描冲突 */
+    wx.stopBluetoothDevicesDiscovery({
+      complete: function () {
+        /* 先移除旧监听器, 防止多次扫描后监听器累积 */
+        if (wx.offBluetoothDeviceFound) wx.offBluetoothDeviceFound();
+
+        wx.startBluetoothDevicesDiscovery({
+          allowDuplicatesKey: false,
+          interval: 0,
+          success: function () {
+            var devices = {};
+            wx.onBluetoothDeviceFound(function (res) {
+              for (var i = 0; i < res.devices.length; i++) {
+                var d = res.devices[i];
+                var name = d.name || d.localName || '';
+                if (name === DEVICE_NAME || d.advertisServiceUUIDs) {
+                  devices[d.deviceId] = d;
+                }
+              }
+            });
+
+            setTimeout(function () {
+              wx.stopBluetoothDevicesDiscovery();
+              var list = [];
+              var keys = Object.keys(devices);
+              for (var i = 0; i < keys.length; i++) {
+                var d = devices[keys[i]];
+                list.push({
+                  deviceId: d.deviceId,
+                  name: d.name || d.localName || 'Unknown',
+                  RSSI: d.RSSI
+                });
+              }
+              resolve(list);
+            }, 5000);
+          },
+          fail: function (err) {
+            reject('scan fail: ' + JSON.stringify(err));
           }
         });
-
-        setTimeout(function () {
-          wx.stopBluetoothDevicesDiscovery();
-          var list = [];
-          var keys = Object.keys(devices);
-          for (var i = 0; i < keys.length; i++) {
-            var d = devices[keys[i]];
-            list.push({
-              deviceId: d.deviceId,
-              name: d.name || d.localName || 'Unknown',
-              RSSI: d.RSSI
-            });
-          }
-          resolve(list);
-        }, 5000);
-      },
-      fail: function (err) {
-        reject('scan fail: ' + JSON.stringify(err));
       }
     });
   });
@@ -134,6 +152,7 @@ function connect(deviceId) {
       deviceId: deviceId,
       success: function () {
         s_deviceId = deviceId;
+        s_lastDeviceId = deviceId;   /* 记住设备用于快速重连 */
         s_connected = true;
 
         wx.getBLEDeviceServices({
@@ -208,17 +227,42 @@ function connect(deviceId) {
 
 /* ===== send ===== */
 
+/* 命令类型 (与固件 main.h 对齐) */
+var CMD_TYPE_SET        = 0x00;  /* 直接设置 */
+var CMD_TYPE_LIGHT_UP   = 0x01;
+var CMD_TYPE_LIGHT_DOWN = 0x02;
+var CMD_TYPE_ALARM_SET  = 0x06;  /* 直设闹钟: mode=时 light=分 color=秒 */
+
+/**
+ * 发送控制命令 — 4字节帧 [cmd_type][mode][light][color]
+ * 固件 ble_uart.c 兼容解析新旧两种格式
+ */
 function sendCommand(mode, light, color) {
+  return sendRaw([CMD_TYPE_SET, mode, light, color]);
+}
+
+/**
+ * 直设闹钟: [0x06][时][分][秒]
+ * 0:0:0 = 取消闹钟
+ */
+function sendAlarmCommand(hour, min, sec) {
+  return sendRaw([CMD_TYPE_ALARM_SET, hour, min, sec]);
+}
+
+/**
+ * 通用帧发送
+ */
+function sendRaw(bytes) {
   return new Promise(function (resolve, reject) {
     if (!s_connected || !s_deviceId) {
       reject('not connected');
       return;
     }
-    var buf = new ArrayBuffer(3);
+    var buf = new ArrayBuffer(bytes.length);
     var data = new Uint8Array(buf);
-    data[0] = mode;
-    data[1] = light;
-    data[2] = color;
+    for (var i = 0; i < bytes.length; i++) {
+      data[i] = bytes[i];
+    }
 
     wx.writeBLECharacteristicValue({
       deviceId: s_deviceId,
@@ -242,6 +286,22 @@ function disconnect() {
   s_notifyReady = false;
 }
 
+/* ===== quick reconnect ===== */
+
+/**
+ * 快速重连上次设备 — 无需重新扫描
+ * 断联后直接按 deviceId 重连, 若失败再走完整扫描流程
+ */
+function reconnect() {
+  return new Promise(function (resolve, reject) {
+    if (!s_lastDeviceId) {
+      reject('no last device');
+      return;
+    }
+    connect(s_lastDeviceId).then(resolve).catch(reject);
+  });
+}
+
 /* ===== export ===== */
 
 module.exports = {
@@ -251,7 +311,10 @@ module.exports = {
   init: init,
   startScan: startScan,
   connect: connect,
+  reconnect: reconnect,
+  getLastDeviceId: getLastDeviceId,
   sendCommand: sendCommand,
+  sendAlarmCommand: sendAlarmCommand,
   disconnect: disconnect,
   isConnected: isConnected,
   onNotify: onNotify,

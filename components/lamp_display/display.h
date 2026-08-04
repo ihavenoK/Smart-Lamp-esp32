@@ -5,33 +5,29 @@
 #include "main.h"
 
 /**
- * @brief OLED æ˜¾ç¤ºç»„ä»¶ â€” SSD1306 128x64 I2C é©±åŠ¨
+ * @brief OLED ÏÔÊ¾×é¼ş - SSD1306 128x64 I2C + LVGL 9 (v1.0.2)
  *
- * GPIO21=SDA, GPIO22=SCL (I2C0 ç¡¬ä»¶)
- * å¯¹åº”åŸ STM32 OLED.c (è½¯ä»¶I2C) -> æ”¹ç”¨ ESP-IDF ç¡¬ä»¶I2C + ssd1306 ç»„ä»¶
+ * GPIO21=SDA, GPIO22=SCL (I2C0 Ó²¼ş)
+ * µ×²ã: ESP-IDF esp_lcd ÄÚÖÃ SSD1306 Ãæ°åÇı¶¯
+ * äÖÈ¾: LVGL 9 (I1 µ¥É«È«»º³å) + esp_lvgl_port
  *
- * å››è¡Œå¸ƒå±€ (ä¸åŸç‰ˆä¸€è‡´):
- *   Line 1: "TXX:XX" + "AXX:XX:XX" (æ—¶é’Ÿ/é—¹é’Ÿ)
- *   Line 2: "Humi:XX"  + "Temp:XX"
- *   Line 3: "Mode:X"   + "Level:X"
- *   Line 4: "Color:X"  + "Stu:XXXX"
+ * UI ²¼¾Ö (0.96" 128x64):
+ *   Ö÷½çÃæ  : ´ó×ÖÊ±ÖÓ HH:MM + ÈÕÆÚ/ÎÂÊª¶È/Á¬½Ó×´Ì¬ + Ä£Ê½²ÎÊı + ÄÖÖÓµ¹¼ÆÊ±
+ *   ÄÖÖÓÉèÖÃ: HH:MM:SS Èı¶ÎÉÁË¸ + °´¼üÌáÊ¾
  */
 
 /**
- * @brief åˆå§‹åŒ– OLED
- * I2C0, åœ°å€ 0x3C (SSD1306)
- * åŠ å…¥ç­‰å¾…ï¼šè‹¥ SSD1306 ç»„ä»¶ä¸å­˜åœ¨, ä½¿ç”¨è½¯ä»¶ I2C å›é€€
+ * @brief ³õÊ¼»¯ OLED + LVGL (I2C0, µØÖ· 0x3C, SSD1306)
  */
 void display_init(void);
 
 /**
- * @brief OLED æ˜¾ç¤ºåˆ·æ–°ä»»åŠ¡ (200ms å‘¨æœŸ, ä¼˜å…ˆçº§ 5)
- * è¯»å–å…¨å±€ oled_data_t æ›´æ–°æ˜¾ç¤º
+ * @brief Æô¶¯ÏÔÊ¾Ë¢ĞÂ (Ê±ÇøÉèÖÃ + LVGL ÖÜÆÚË¢ĞÂ¶¨Ê±Æ÷)
  */
 void oled_task_init(void);
 
 /**
- * @brief æ›´æ–° OLED æ˜¾ç¤ºç¼“å­˜
+ * @brief ¸üĞÂ OLED ÏÔÊ¾»º´æ (LVGL °æ±¾±£Áô½Ó¿Ú, ÓÉ¶¨Ê±Æ÷×Ô¶¯Ë¢ĞÂ)
  */
 void display_update(const oled_data_t *data);
 

@@ -84,3 +84,8 @@ Desktop.ini
 
 # OTA release build output directories (firmware .bin are force-added per release)
 OTA/*/
+!OTA/1.0.1/
+
+# Build logs and test/serial output
+output/
+*.log

@@ -26,7 +26,7 @@ menu "SmartLamp Configuration"
 
         config APP_PROJECT_VER
             string "Firmware version string"
-            default "1.0.0"
+            default "1.0.2"
             help
                 Application version string used for OTA version comparison.
                 Compared against the server version.txt content to decide

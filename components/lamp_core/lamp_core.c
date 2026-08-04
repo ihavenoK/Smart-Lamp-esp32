@@ -266,6 +266,20 @@ static void main_ctrl_task(void *arg)
                 uint8_t new_light = (g_light_level > 0U)
                                     ? g_light_level - 1U : 0U;
                 lamp_mode_set(g_mode, new_light, g_color_index);
+            } else if (cmd.cmd_type == CMD_TYPE_ALARM_SET) {
+                /* BLE 直设闹钟: mode=时, light=分, color=秒
+                 * 0:0:0 表示取消闹钟 */
+                uint32_t total_sec = (uint32_t)cmd.mode * 3600U
+                                   + (uint32_t)cmd.light * 60U
+                                   + (uint32_t)cmd.color;
+                if (total_sec > 0U) {
+                    alarm_start(total_sec);
+                    ESP_LOGI(TAG, "Alarm set via BLE: %uh %um %us",
+                             cmd.mode, cmd.light, cmd.color);
+                } else {
+                    alarm_stop();
+                    ESP_LOGI(TAG, "Alarm cancelled via BLE");
+                }
             } else {
                 /* 默认: 直接设置模式 (CMD_TYPE_SET=0) */
                 lamp_mode_set(cmd.mode, cmd.light, cmd.color);
