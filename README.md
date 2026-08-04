@@ -26,11 +26,11 @@
 │  GPIO34 ─── 光敏电阻 (ADC1_CH6)                  │
 │  GPIO13 ─── LD2402 雷达 UART1 RX (115200bps)     │
 │  GPIO4  ─── LD2402 雷达 UART1 TX                 │
-│  GPIO27 ─── LD2402 雷达 IO (有人/无人)           │
+│  GPIO27 ─── LD2402 雷达 IO (有人/无人)            │
 │  GPIO16 ─── ASRPRO 语音 UART2 RX (9600bps)       │
 │  GPIO17 ─── ASRPRO 语音 UART2 TX                 │
-│  GPIO18 ─── MODE 按键 (模式切换/长按闹钟)        │
-│  GPIO19 ─── ADJUST 按键 (亮度/颜色调节)          │
+│  GPIO18 ─── MODE 按键 (模式切换/长按闹钟)         │
+│  GPIO19 ─── ADJUST 按键 (亮度/颜色调节)           │
 └──────────────────────────────────────────────────┘
 ```
 
