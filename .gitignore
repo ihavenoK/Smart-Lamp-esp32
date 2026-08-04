@@ -26,6 +26,7 @@ build/
 
 # ESP-IDF specific build outputs
 *.bin
+!OTA/**/*.bin
 *.elf
 *.map
 flasher_args.json # Generated in build directory
@@ -82,9 +83,8 @@ Desktop.ini
 .vscode/
 .workbuddy/
 
-# OTA release build output directories (firmware .bin are force-added per release)
-OTA/*/
-!OTA/1.0.1/
+# OTA release firmware directories ARE tracked (each version's Smart-Lamp.bin + version.txt)
+# Note: build/ and other build-output dirs remain ignored via the rules above.
 
 # Build logs and test/serial output
 output/
