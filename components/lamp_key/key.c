@@ -2,8 +2,12 @@
  * @file key.c
  * @brief 按键组件 — 非阻塞去抖动 + 命令生成 + 长按检测
  *
- * MODE键 (GPIO18): 短按(<2s)切换模式 / 长按(>=2s)进入闹钟设置
- * ADJUST键 (GPIO19): 短按调节亮度/颜色 / 闹钟设置模式下进入下一步
+ * MODE键 (GPIO13): 短按(<2s)切换模式 / 长按(>=2s)进入闹钟设置
+ * ADJUST键 (GPIO14): 短按调节亮度/颜色 / 闹钟设置模式下进入下一步
+ *
+ * 2026-08-11 低功耗改造: 按键从 GPIO18/19 改接 RTC GPIO 13/14,
+ *   电路反接为 "按下=高电平" (接 3.3V), 满足 ESP32 EXT1 ANY_HIGH 唤醒。
+ *   内部下拉, 睡眠时按键悬空=低, 不会自唤醒。
  *
  * 按键按下 → lamp_cmd_t → g_cmd_queue → main_ctrl_task 处理
  * 50ms 定时器扫描, MODE 键区分短按(松手时触发)和长按(持续2s触发)
@@ -30,8 +34,8 @@
 
 static const char *TAG = "key";
 
-#define KEY_MODE_GPIO       18U
-#define KEY_ADJUST_GPIO     19U
+#define KEY_MODE_GPIO       32U    /* RTC GPIO: 支持 EXT1 唤醒 (原 GPIO18, 修正 GPIO13→32 避免与雷达 RX 冲突) */
+#define KEY_ADJUST_GPIO     14U    /* RTC GPIO: 支持 EXT1 唤醒 (原 GPIO19) */
 #define DEBOUNCE_MS         50U
 #define HOLD_SHORT_MS       500U    /* ADJUST/普通长按阈值 (暂未使用) */
 #define HOLD_LONG_MS        2000U   /* MODE 进入闹钟设置的长按阈值 */
@@ -194,9 +198,9 @@ static void key_process(key_ctx_t *ctx)
 static void scan_callback(TimerHandle_t xTimer)
 {
     (void)xTimer;
-    /* 按键按下时 GPIO 为低电平 (外部上拉), last_level=1 表示按下 */
-    g_key1_ctx.last_level = (gpio_get_level(KEY_MODE_GPIO) == 0U) ? 1U : 0U;
-    g_key2_ctx.last_level = (gpio_get_level(KEY_ADJUST_GPIO) == 0U) ? 1U : 0U;
+    /* 按键按下时 GPIO 为高电平 (外部接 3.3V, 内部下拉), last_level=1 表示按下 */
+    g_key1_ctx.last_level = (gpio_get_level(KEY_MODE_GPIO) == 1U) ? 1U : 0U;
+    g_key2_ctx.last_level = (gpio_get_level(KEY_ADJUST_GPIO) == 1U) ? 1U : 0U;
     key_process(&g_key1_ctx);
     key_process(&g_key2_ctx);
 }
@@ -206,8 +210,10 @@ void key_init(void)
     gpio_config_t io_conf = {
         .pin_bit_mask = (1ULL << KEY_MODE_GPIO) | (1ULL << KEY_ADJUST_GPIO),
         .mode         = GPIO_MODE_INPUT,
-        .pull_up_en   = GPIO_PULLUP_ENABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        /* 低功耗改造: 按键反接 3.3V (按下=高), 改用内部下拉
+         * 睡眠时按键悬空=低电平, 不会误触发 EXT1 ANY_HIGH 唤醒 */
+        .pull_up_en   = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_ENABLE,
         .intr_type    = GPIO_INTR_DISABLE,
     };
     gpio_config(&io_conf);

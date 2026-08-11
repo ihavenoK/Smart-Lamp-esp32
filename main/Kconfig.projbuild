@@ -51,4 +51,27 @@ menu "SmartLamp Configuration"
                 If empty, OTA will download unconditionally (not recommended).
     endmenu
 
+    menu "Power Management"
+        config SMARTLAMP_PM_ENABLE
+            bool "Enable auto light sleep"
+            default y
+            help
+                Automatically enter light sleep (~0.8mA) after idle timeout.
+                Wake up on button press (GPIO13/14, must be wired to 3.3V).
+
+                NOTE: During light sleep, BLE advertising stops and the
+                device is not discoverable. Press a button to wake and
+                reconnect.
+
+        config SMARTLAMP_PM_IDLE_TIMEOUT_SEC
+            int "Idle timeout before sleep (seconds)"
+            default 300
+            range 30 3600
+            depends on SMARTLAMP_PM_ENABLE
+            help
+                Enter light sleep after this many seconds with no user
+                interaction (no BLE connection, no button/voice commands,
+                no alarm running, no person detected by radar).
+    endmenu
+
 endmenu

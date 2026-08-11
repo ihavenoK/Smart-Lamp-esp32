@@ -11,6 +11,7 @@
 | **感知** | DHT11 温湿度 + 光敏电阻 ADC + LD2402 毫米波人体存在检测 |
 | **显示** | 0.96" SSD1306 OLED 128x64（LVGL 9 渲染，WiFi/BLE/闹钟图标，大字时钟+秒） |
 | **联网** | WiFi STA（SNTP 北京时间 + OTA 固件升级），BLE Peripheral（Nordic NUS） |
+| **低功耗** | 闲置自动 Light Sleep（~0.8mA），按键即时唤醒，RTC 时钟备份 |
 | **拓展** | 闹钟倒计时 + 学习计时，OTA 双分区回滚保护 |
 
 ## 硬件架构
@@ -26,12 +27,16 @@
 │  GPIO34 ─── 光敏电阻 (ADC1_CH6)                  │
 │  GPIO13 ─── LD2402 雷达 UART1 RX (115200bps)     │
 │  GPIO4  ─── LD2402 雷达 UART1 TX                 │
-│  GPIO27 ─── LD2402 雷达 IO (有人/无人)            │
+│  GPIO27 ─── LD2402 雷达 IO (有人/无人)           │
 │  GPIO16 ─── ASRPRO 语音 UART2 RX (9600bps)       │
 │  GPIO17 ─── ASRPRO 语音 UART2 TX                 │
-│  GPIO18 ─── MODE 按键 (模式切换/长按闹钟)         │
-│  GPIO19 ─── ADJUST 按键 (亮度/颜色调节)           │
+│  GPIO32 ─── MODE 按键 (模式切换/长按闹钟)        │
+│  GPIO14 ─── ADJUST 按键 (亮度/颜色调节)          │
 └──────────────────────────────────────────────────┘
+
+> **按键接线注意（低功耗改造）**：MODE/ADJUST 按键接 GPIO32/14（RTC GPIO，支持
+> 睡眠唤醒），且另一端接 **3.3V**（按下=高电平），配合 EXT1 ANY_HIGH 唤醒。
+> 原 GPIO18/19 无 RTC 唤醒能力，已弃用；GPIO13 已被雷达 RX 占用，勿接按键。
 ```
 
 ## 软件架构
@@ -98,17 +103,18 @@ Smart-Lamp/
 ├── main/                     # 主程序入口 + 头文件
 │   ├── main.c                # app_main(), 7 任务创建
 │   └── main.h                # 全局类型/事件位/句柄
-├── components/               # 自定义组件（8 个）
-│   ├── lamp_core/            # 核心业务逻辑（模式/亮度/颜色/闹钟）
-│   ├── lamp_led/             # WS2812B RMT 驱动 + 颜��查表
+├── components/               # 自定义组件（11 个）
+│   ├── lamp_core/            # 核心业务逻辑（模式/亮度/颜色/闹钟/闲置睡眠判定）
+│   ├── lamp_led/             # WS2812B RMT 驱动 + 颜色查表
 │   ├── lamp_display/         # SSD1306 + LVGL 9 UI（v1.0.2）
 │   ├── lamp_sensor/          # DHT11 + ADC + 按键 + 雷达入口
 │   ├── lamp_radar/           # LD2402 UART 距离解析
-│   ├── lamp_key/             # 按键状态机（非阻塞 50ms 扫描）
+│   ├── lamp_key/             # 按键状态机（非阻塞 50ms 扫描, GPIO13/14）
 │   ├── lamp_voice/           # ASRPRO UART2 4字节帧协议
 │   ├── lamp_ble/             # BLE NimBLE Nordic NUS 透传
 │   ├── lamp_alarm/           # 闹钟/学习计时 FreeRTOS Timer
-│   └── lamp_wifi/            # WiFi STA + SNTP + OTA
+│   ├── lamp_wifi/            # WiFi STA + SNTP + OTA
+│   └── lamp_pm/              # 低功耗: Light Sleep 入口 + RTC 时间备份
 ├── WxApp/                    # 微信小程序源码
 ├── managed_components/       # ESP-IDF 托管依赖
 │   ├── espressif__led_strip/ # WS2812B RMT 驱动
@@ -149,6 +155,10 @@ idf.py build flash monitor
 2. WiFi 自动连接（约 3-10 秒），连接后同步北京时间
 3. 微信小程序搜索 "SmartLamp" 蓝牙设备并连接
 4. 物理按键、语音命令、微信小程序三种方式均可控制
+5. 闲置 5 分钟（可配）自动进入低功耗，OLED 熄灭；按键按下即时唤醒
+
+> **低功耗说明**：睡眠期间 BLE 广播停止，手机无法连接设备，需按键唤醒后
+> 重新连接。闹钟计时、学习模式、BLE 连接、雷达检测到人时不会进入睡眠。
 
 ## OTA 固件升级
 
@@ -166,6 +176,7 @@ HTTP GET http://<server>/smartlamp.bin → esp_https_ota() → esp_restart()
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| 1.0.3 | 2026-08 | 新增低功耗模式（Light Sleep + EXT1 按键唤醒 + RTC 时钟备份），按键改接 GPIO13/14 |
 | 1.0.2 | 2026-08 | OLED 升级 LVGL 9 渲染，图标化状态栏，四行紧排布局 |
 | 1.0.1 | 2026-07 | BLE 替换巴法云，NimBLE Nordic NUS，OTA 固件升级 |
 | 1.0.0 | 2026-06 | STM32+ESP8266 → ESP32 单芯片移植，FreeRTOS 6任务架构 |

@@ -31,4 +31,14 @@ void oled_task_init(void);
  */
 void display_update(const oled_data_t *data);
 
+/**
+ * @brief 关闭 OLED 显示 (进入低功耗前调用, 省 ~10mA)
+ */
+void display_suspend(void);
+
+/**
+ * @brief 重新开启 OLED 显示 (唤醒后调用)
+ */
+void display_resume(void);
+
 #endif /* DISPLAY_H */

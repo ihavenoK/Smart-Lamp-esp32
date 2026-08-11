@@ -155,6 +155,7 @@ static const char *s_mode_names[] = {
 
 /* ====== LVGL 控件句柄 ====== */
 static lv_disp_t   *s_disp = NULL;
+static esp_lcd_panel_handle_t s_panel = NULL;   /* 供 suspend/resume 开关显示 */
 
 /* 主界面 */
 static lv_obj_t *s_scr_main  = NULL;
@@ -451,6 +452,7 @@ void display_init(void)
     ESP_ERROR_CHECK(esp_lcd_panel_init(panel));
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel, true));
     ESP_ERROR_CHECK(esp_lcd_panel_invert_color(panel, true)); /* black bg, white text */
+    s_panel = panel;
 
     ESP_LOGI(TAG, "SSD1306 128x64 via esp_lcd: I2C0 SDA=GPIO%u SCL=GPIO%u",
              I2C_MASTER_SDA_IO, I2C_MASTER_SCL_IO);
@@ -512,4 +514,20 @@ void display_update(const oled_data_t *data)
 {
     /* LVGL 版本由定时器直接从全局状态刷新, 保留该接口以兼容调用方 */
     (void)data;
+}
+
+void display_suspend(void)
+{
+    if (s_panel != NULL) {
+        ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(s_panel, false));
+        ESP_LOGI(TAG, "OLED display off (suspend)");
+    }
+}
+
+void display_resume(void)
+{
+    if (s_panel != NULL) {
+        ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(s_panel, true));
+        ESP_LOGI(TAG, "OLED display on (resume)");
+    }
 }

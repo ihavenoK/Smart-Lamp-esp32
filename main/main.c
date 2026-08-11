@@ -43,6 +43,7 @@ extern void ws2812b_task_init(void);
 extern void sensor_task_init(void);
 extern void oled_task_init(void);
 extern void voice_task_init(void);
+extern void lamp_pm_init(void);        /* 低功耗: 唤醒源配置 */
 
 void app_main(void)
 {
@@ -94,6 +95,10 @@ void app_main(void)
     voice_task_init();
     alarm_init();            /* 闹钟 + 学习定时器, 必须在 main_ctrl 之前创建 */
     main_ctrl_task_init();
+
+    /* 5. 低功耗: 配置唤醒源 (EXT1 GPIO13/14 + 兜底定时器)
+     * 必须在任务启动后配置, 睡眠由 main_ctrl_task 触发 */
+    lamp_pm_init();
 
     /* app_main 自身退化为空闲，FreeRTOS 调度器接管 */
     ESP_LOGI(TAG, "All tasks created, scheduler running.");

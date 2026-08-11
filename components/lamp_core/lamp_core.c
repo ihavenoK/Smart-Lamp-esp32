@@ -7,6 +7,7 @@
 #include "main.h"
 #include "ws2812b.h"
 #include "alarm.h"
+#include "lamp_pm.h"             /* 低功耗: lamp_pm_enter_sleep() */
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
@@ -193,6 +194,36 @@ static void alarm_setting_handle(uint8_t cmd_type)
 
 /* ====== 主控制任务 ====== */
 
+/* 低功耗: 闲置睡眠判定 (2026-08-11)
+ * 守卫条件: 以下任一为真则拒绝睡眠
+ *   - BLE 已连接 (EVT_BLE_CONNECTED)
+ *   - 闹钟设置中 (g_alarm_state != IDLE)
+ *   - 闹钟计时中 (alarm_is_running)
+ *   - 学习模式 (g_mode == STUDY, 学习计时器运行中)
+ *   - 雷达检测到人 (g_radar_presence != 0, 防静坐看书灯突灭)
+ */
+static bool pm_guard_ok(void)
+{
+    EventBits_t bits = xEventGroupGetBits(g_system_events);
+
+    if (bits & EVT_BLE_CONNECTED) {
+        return false;
+    }
+    if (g_alarm_state != ALARM_SET_IDLE) {
+        return false;
+    }
+    if (alarm_is_running()) {
+        return false;
+    }
+    if (g_mode == LAMP_MODE_STUDY) {
+        return false;    /* 学习计时运行中, 灯必须保持 */
+    }
+    if (g_radar_presence != 0U) {
+        return false;    /* 雷达有人, 不睡 (防静坐时灯突灭) */
+    }
+    return true;
+}
+
 static void main_ctrl_task(void *arg)
 {
     (void)arg;
@@ -210,6 +241,11 @@ static void main_ctrl_task(void *arg)
     /* BLE 上报缓存: 初始化为不可能值, 确保首帧必上报 */
     TickType_t last_ble_upload = xTaskGetTickCount();
 
+#if defined(CONFIG_SMARTLAMP_PM_ENABLE) && CONFIG_SMARTLAMP_PM_ENABLE
+    /* 低功耗: 闲置累计 (ms), 无命令时按 100ms 递增 */
+    uint32_t idle_ms = 0U;
+#endif
+
     while (1) {
         /* ====== 闹钟设置超时检测 (每次循环都检查, 不依赖按键触发) ====== */
         if (g_alarm_state != ALARM_SET_IDLE) {
@@ -222,6 +258,10 @@ static void main_ctrl_task(void *arg)
 
         /* 接收命令 (按键/语音/BLE统一入口) */
         if (xQueueReceive(g_cmd_queue, &cmd, pdMS_TO_TICKS(100)) == pdTRUE) {
+
+#if defined(CONFIG_SMARTLAMP_PM_ENABLE) && CONFIG_SMARTLAMP_PM_ENABLE
+            idle_ms = 0U;   /* 有用户交互 → 重置闲置计时 */
+#endif
 
             /* -------------------------------------------
              * 优先级 1: 闹钟设置模式 (模态对话框, 拦截所有按键)
@@ -285,6 +325,24 @@ static void main_ctrl_task(void *arg)
                 lamp_mode_set(cmd.mode, cmd.light, cmd.color);
             }
         }
+
+#if defined(CONFIG_SMARTLAMP_PM_ENABLE) && CONFIG_SMARTLAMP_PM_ENABLE
+        /* ====== 低功耗: 闲置超时 → 进入 Light Sleep ====== */
+        idle_ms += 100U;
+        if (idle_ms >= (CONFIG_SMARTLAMP_PM_IDLE_TIMEOUT_SEC * 1000U)) {
+            idle_ms = 0U;   /* 无论如何重置, 避免死循环尝试 */
+
+            if (pm_guard_ok()) {
+                ESP_LOGI(TAG, "Idle %lus, entering light sleep...",
+                         (unsigned long)CONFIG_SMARTLAMP_PM_IDLE_TIMEOUT_SEC);
+                lamp_pm_enter_sleep();
+
+                /* 唤醒后恢复灯光 (灭灯是进睡眠前做的) */
+                lamp_mode_set(g_mode, g_light_level, g_color_index);
+                ESP_LOGI(TAG, "Woke up, light restored");
+            }
+        }
+#endif
 
         /* 读取传感器数据 (非阻塞) */
         if (xQueueReceive(g_sensor_queue, &sensor, 0) == pdTRUE) {
